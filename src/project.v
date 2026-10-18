@@ -30,9 +30,9 @@ module tt_um_vga_example (
 
     // ui_in[0]: start or restart.
     // ui_in[1]: reaction button.
-    reg [7:0] ui_meta;
-    reg [7:0] ui_sync;
-    reg [7:0] ui_prev;
+    reg [1:0] ui_meta;
+    reg [1:0] ui_sync;
+    reg [1:0] ui_prev;
 
     wire start_press;
     wire react_press;
@@ -98,9 +98,9 @@ module tt_um_vga_example (
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            ui_meta       <= 8'h00;
-            ui_sync       <= 8'h00;
-            ui_prev       <= 8'h00;
+            ui_meta       <= 2'b00;
+            ui_sync       <= 2'b00;
+            ui_prev       <= 2'b00;
 
             state         <= ST_IDLE;
             lamp_count    <= 3'd0;
@@ -121,7 +121,7 @@ module tt_um_vga_example (
             best_valid    <= 1'b0;
         end else begin
             // Two-flop synchronizer for asynchronous external buttons.
-            ui_meta <= ui_in;
+            ui_meta <= ui_in[1:0];
             ui_sync <= ui_meta;
             ui_prev <= ui_sync;
 
@@ -287,7 +287,7 @@ module tt_um_vga_example (
                 default: bitmap = 15'b000000000000000;
             endcase
 
-            bit_index = row + row + row + col;
+            bit_index = {2'd0, row} + {2'd0, row} + {2'd0, row} + {3'd0, col};
 
             if ((row < 3'd5) && (col < 2'd3))
                 font_bit = bitmap[14 - bit_index];
