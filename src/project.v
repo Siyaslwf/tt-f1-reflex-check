@@ -535,4 +535,315 @@ module tt_um_vga_example (
     endfunction
 
     function lamp_inner;
-        input [8:0] px
+        input [8:0] px;
+        input [7:0] py;
+        input [8:0] base_x;
+        begin
+            lamp_inner = (px >= (base_x + 9'd6)) &&
+                         (px < (base_x + 9'd36)) &&
+                         (py >= 8'd50) &&
+                         (py < 8'd70);
+        end
+    endfunction
+
+    reg [1:0] red;
+    reg [1:0] green;
+    reg [1:0] blue;
+    reg       lamp_here;
+    reg       lamp_is_red;
+    reg       text_here;
+    reg       dot_here;
+
+    always @* begin
+        // Black base colour. RGB uses black, white and red only.
+        red         = 2'b00;
+        green       = 2'b00;
+        blue        = 2'b00;
+        lamp_here   = 1'b0;
+        lamp_is_red = 1'b0;
+        text_here   = 1'b0;
+        dot_here    = 1'b0;
+
+        // Top status stripe.
+        if (y < 8'd4) begin
+            if (state == ST_RUN) begin
+                red   = 2'b11;
+                green = 2'b00;
+                blue  = 2'b00;
+            end else begin
+                red   = 2'b11;
+                green = 2'b11;
+                blue  = 2'b11;
+            end
+        end
+
+        // Compact heading: F1.
+        text_here =
+            label_pixel(x, y, 9'd148, 8'd14, 8'h46) | // F
+            label_pixel(x, y, 9'd156, 8'd14, 8'h31);  // 1
+
+        if (text_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        // Five white-bordered black lamp housings.
+        if (lamp_box(x, y, 9'd36)  ||
+            lamp_box(x, y, 9'd92)  ||
+            lamp_box(x, y, 9'd148) ||
+            lamp_box(x, y, 9'd204) ||
+            lamp_box(x, y, 9'd260)) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        if ((y >= 8'd47) && (y < 8'd73)) begin
+            if (lamp_box(x, y, 9'd36)  ||
+                lamp_box(x, y, 9'd92)  ||
+                lamp_box(x, y, 9'd148) ||
+                lamp_box(x, y, 9'd204) ||
+                lamp_box(x, y, 9'd260)) begin
+                red   = 2'b00;
+                green = 2'b00;
+                blue  = 2'b00;
+            end
+        end
+
+        // Lamp activation order.
+        if (lamp_inner(x, y, 9'd36)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd0);
+        end
+
+        if (lamp_inner(x, y, 9'd92)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd1);
+        end
+
+        if (lamp_inner(x, y, 9'd148)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd2);
+        end
+
+        if (lamp_inner(x, y, 9'd204)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd3);
+        end
+
+        if (lamp_inner(x, y, 9'd260)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd4);
+        end
+
+        if (lamp_here) begin
+            if (lamp_is_red) begin
+                red   = 2'b11;
+                green = 2'b00;
+                blue  = 2'b00;
+            end else begin
+                red   = 2'b01;
+                green = 2'b01;
+                blue  = 2'b01;
+            end
+        end
+
+        // Current time panel.
+        if ((x >= 9'd105) && (x < 9'd215) &&
+            (y >= 8'd94) && (y < 8'd132)) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        if ((x >= 9'd107) && (x < 9'd213) &&
+            (y >= 8'd96) && (y < 8'd130)) begin
+            red   = 2'b00;
+            green = 2'b00;
+            blue  = 2'b00;
+        end
+
+        // Current timer: S.MMM.
+        text_here =
+            digit_pixel(x, y, 9'd125, 8'd102, run_seconds) |
+            digit_pixel(x, y, 9'd145, 8'd102, run_hundreds) |
+            digit_pixel(x, y, 9'd159, 8'd102, run_tens) |
+            digit_pixel(x, y, 9'd173, 8'd102, run_ones);
+
+        dot_here = (x >= 9'd139) && (x < 9'd143) &&
+                   (y >= 8'd117) && (y < 8'd121);
+
+        if (text_here || dot_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        // BEST row: label and three milliseconds only.
+        if ((x >= 9'd72) && (x < 9'd248) &&
+            (y >= 8'd150) && (y < 8'd174)) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        if ((x >= 9'd74) && (x < 9'd246) &&
+            (y >= 8'd152) && (y < 8'd172)) begin
+            red   = 2'b00;
+            green = 2'b00;
+            blue  = 2'b00;
+        end
+
+        text_here =
+            label_pixel(x, y, 9'd82, 8'd157, 8'h42) | // B
+            label_pixel(x, y, 9'd90, 8'd157, 8'h45) | // E
+            label_pixel(x, y, 9'd98, 8'd157, 8'h53) | // S
+            label_pixel(x, y, 9'd106, 8'd157, 8'h54);  // T
+
+        if (text_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        if (best_valid) begin
+            text_here =
+                digit_pixel(x, y, 9'd184, 8'd152, best_hundreds) |
+                digit_pixel(x, y, 9'd198, 8'd152, best_tens) |
+                digit_pixel(x, y, 9'd212, 8'd152, best_ones);
+        end else begin
+            text_here = 1'b0;
+        end
+
+        if (text_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        // MAX row: red border and three-digit 227 target.
+        if ((x >= 9'd72) && (x < 9'd248) &&
+            (y >= 8'd184) && (y < 8'd208)) begin
+            red   = 2'b11;
+            green = 2'b00;
+            blue  = 2'b00;
+        end
+
+        if ((x >= 9'd74) && (x < 9'd246) &&
+            (y >= 8'd186) && (y < 8'd206)) begin
+            red   = 2'b00;
+            green = 2'b00;
+            blue  = 2'b00;
+        end
+
+        text_here =
+            label_pixel(x, y, 9'd82, 8'd191, 8'h4D) | // M
+            label_pixel(x, y, 9'd90, 8'd191, 8'h41) | // A
+            label_pixel(x, y, 9'd98, 8'd191, 8'h58);  // X
+
+        if (text_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        text_here =
+            digit_pixel(x, y, 9'd184, 8'd186, MAX_HUNDREDS) |
+            digit_pixel(x, y, 9'd198, 8'd186, MAX_TENS) |
+            digit_pixel(x, y, 9'd212, 8'd186, MAX_ONES);
+
+        if (text_here) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
+        end
+
+        // Compact false-start / timeout state markers.
+        if (state == ST_FALSE) begin
+            if ((x >= 9'd140) && (x < 9'd180) &&
+                (y >= 8'd84) && (y < 8'd88)) begin
+                red   = 2'b11;
+                green = 2'b00;
+                blue  = 2'b00;
+            end
+        end
+
+        if (state == ST_SLOW) begin
+            if ((x >= 9'd140) && (x < 9'd180) &&
+                (y >= 8'd84) && (y < 8'd88)) begin
+                red   = 2'b11;
+                green = 2'b11;
+                blue  = 2'b11;
+            end
+        end
+
+        // VGA blanking is always black.
+        if (!display_on) begin
+            red   = 2'b00;
+            green = 2'b00;
+            blue  = 2'b00;
+        end
+    end
+
+    // TinyVGA PMOD order: R1 G1 B1 VSYNC R0 G0 B0 HSYNC.
+    assign uo_out  = {hsync, blue[0], green[0], red[0],
+                      vsync, blue[1], green[1], red[1]};
+    assign uio_out = 8'h00;
+    assign uio_oe  = 8'h00;
+
+    wire unused;
+    assign unused = &{ena, uio_in, 1'b0};
+
+endmodule
+
+
+// Embedded to keep this submission as one complete Verilog file.
+module hvsync_generator (
+    input  wire       clk,
+    input  wire       reset,
+    output wire       hsync,
+    output wire       vsync,
+    output wire       display_on,
+    output wire [9:0] hpos,
+    output wire [9:0] vpos
+);
+
+    reg [9:0] hcount;
+    reg [9:0] vcount;
+
+    always @(posedge clk) begin
+        if (reset) begin
+            hcount <= 10'd0;
+            vcount <= 10'd0;
+        end else begin
+            if (hcount == 10'd799) begin
+                hcount <= 10'd0;
+
+                if (vcount == 10'd524)
+                    vcount <= 10'd0;
+                else
+                    vcount <= vcount + 10'd1;
+            end else begin
+                hcount <= hcount + 10'd1;
+            end
+        end
+    end
+
+    assign hpos = hcount;
+    assign vpos = vcount;
+
+    // 640 active + 16 front porch + 96 active-low sync + 48 back porch.
+    assign hsync = !((hcount >= 10'd656) && (hcount < 10'd752));
+
+    // 480 active + 10 front porch + 2 active-low sync + 33 back porch.
+    assign vsync = !((vcount >= 10'd490) && (vcount < 10'd492));
+
+    assign display_on = (hcount < 10'd640) && (vcount < 10'd480);
+
+endmodule
