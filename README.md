@@ -1,42 +1,29 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+# 🏁 F1 Reflex Precision Trainer: Silicon Reaction Console
+*A Hardware-Accelerated Millisecond Reaction Timer Compiled Into Physical Silicon*
 
-# Tiny Tapeout Verilog Project Template
+[![gds](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/gds.yaml/badge.svg)](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/gds.yaml)
+[![docs](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/docs.yaml/badge.svg)](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/docs.yaml)
+[![test](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/test.yaml/badge.svg)](https://github.com/Siyaslwf/tt-f1-reflex-check/actions/workflows/test.yaml)
 
-- [Read the documentation for project](docs/info.md)
+---
 
-## What is Tiny Tapeout?
+## ⚡ Overview
+Inspired by Formula 1 driver reaction training, this project is a custom digital hardware device synthesized directly onto a SkyWater 130nm ASIC tile. 
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+It features an asynchronous-to-synchronous dual-flop synchronizer, a hardware 1,000 Hz millisecond clock divider, a pseudo-random LFSR blackout timer, an algorithmic 7-segment digital font engine, and a 60Hz 640x480 VGA telemetry display controller.
 
-To learn more and get started, visit https://tinytapeout.com.
+---
 
-## Set up your Verilog project
+## 🎮 How It Works (Gameplay)
+1. **The Gantry Sequence:** Press **Button 0 (`ui_in[0]`)** to initiate the sequence. Five columns of dual red start lamps light up sequentially from left to right.
+2. **The Blackout:** After all lamps illuminate, a randomized hardware delay fires, and **all lights instantly turn off**.
+3. **The Reflex Capture:** The moment the lights drop, a millisecond-precision stopwatch counts up from `00.00` on the screen. Pressing Button 0 again halts the timer. 
+4. **Pro Evaluation:** If your reaction time beats professional F1 thresholds (< 250ms), the screen flashes a brilliant **Victory Green**.
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+---
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
-
-## Enable GitHub actions to build the results page
-
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
-
-## Resources
-
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
-
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+## 🛠️ Tech Stack & Toolchain
+* **Hardware Language:** Verilog (IEEE 1364-2005)
+* **Target Architecture:** SkyWater 130nm ($1\times1$ Tiny Tapeout Tile)
+* **Synthesis & P&R:** LibreLane / OpenROAD
+* **Verification:** Cocotb & Icarus Verilog
