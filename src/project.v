@@ -28,29 +28,30 @@ module tt_um_vga_example (
         .vpos       (pix_y)
     );
 
-    // ui_in[0]: start or restart.
-    // ui_in[1]: reaction button.
-    reg [7:0] ui_meta;
-    reg [7:0] ui_sync;
-    reg [7:0] ui_prev;
+    // ui_in[0] starts a new run.
+    // ui_in[1] stops the timer after light 5.
+    reg [1:0] button_meta;
+    reg [1:0] button_sync;
+    reg [1:0] button_prev;
 
     wire start_press;
     wire react_press;
 
-    assign start_press = ui_sync[0] & ~ui_prev[0];
-    assign react_press = ui_sync[1] & ~ui_prev[1];
+    assign start_press = button_sync[0] & ~button_prev[0];
+    assign react_press = button_sync[1] & ~button_prev[1];
 
     localparam [2:0] ST_IDLE  = 3'd0;
     localparam [2:0] ST_LIGHT = 3'd1;
-    localparam [2:0] ST_GO    = 3'd2;
+    localparam [2:0] ST_RUN   = 3'd2;
     localparam [2:0] ST_DONE  = 3'd3;
     localparam [2:0] ST_FALSE = 3'd4;
     localparam [2:0] ST_SLOW  = 3'd5;
 
-    // Playground VGA clock: 25 MHz, so 25,000,000 cycles = one second.
+    // VGA Playground clock: 25 MHz.
+    // 25,000,000 cycles = 1 second between lamps.
     localparam [24:0] LIGHT_TICKS = 25'd25000000;
 
-    // Requested displayed target: 00.227.
+    // Fixed requested target: 00.227.
     localparam [3:0] MAX_SEC_TENS = 4'd0;
     localparam [3:0] MAX_SEC_ONES = 4'd0;
     localparam [3:0] MAX_MS_HUNDS = 4'd2;
@@ -58,18 +59,17 @@ module tt_um_vga_example (
     localparam [3:0] MAX_MS_ONES  = 4'd7;
 
     reg [2:0]  state;
-    reg [2:0]  lamp_count;
-    reg [24:0] light_div;
+    reg [2:0]  lights_on;
+    reg [24:0] light_counter;
 
-    // Current reaction time: SS.MMM.
-    reg [14:0] ms_div;
+    // Timer digits: SS.MMM.
+    reg [14:0] ms_counter;
     reg [3:0]  run_sec_tens;
     reg [3:0]  run_sec_ones;
     reg [3:0]  run_ms_hunds;
     reg [3:0]  run_ms_tens;
     reg [3:0]  run_ms_ones;
 
-    // Best valid result, held until reset.
     reg [3:0] best_sec_tens;
     reg [3:0] best_sec_ones;
     reg [3:0] best_ms_hunds;
@@ -77,9 +77,9 @@ module tt_um_vga_example (
     reg [3:0] best_ms_ones;
     reg       best_valid;
 
-    wire run_is_better;
+    wire current_is_best;
 
-    assign run_is_better =
+    assign current_is_best =
         (run_sec_tens < best_sec_tens) ||
         ((run_sec_tens == best_sec_tens) &&
          (run_sec_ones < best_sec_ones)) ||
@@ -98,37 +98,37 @@ module tt_um_vga_example (
 
     always @(posedge clk) begin
         if (!rst_n) begin
-            ui_meta       <= 8'h00;
-            ui_sync       <= 8'h00;
-            ui_prev       <= 8'h00;
+            button_meta    <= 2'b00;
+            button_sync    <= 2'b00;
+            button_prev    <= 2'b00;
 
-            state         <= ST_IDLE;
-            lamp_count    <= 3'd0;
-            light_div     <= 25'd0;
+            state          <= ST_IDLE;
+            lights_on      <= 3'd0;
+            light_counter  <= 25'd0;
 
-            ms_div        <= 15'd0;
-            run_sec_tens  <= 4'd0;
-            run_sec_ones  <= 4'd0;
-            run_ms_hunds  <= 4'd0;
-            run_ms_tens   <= 4'd0;
-            run_ms_ones   <= 4'd0;
+            ms_counter     <= 15'd0;
+            run_sec_tens   <= 4'd0;
+            run_sec_ones   <= 4'd0;
+            run_ms_hunds   <= 4'd0;
+            run_ms_tens    <= 4'd0;
+            run_ms_ones    <= 4'd0;
 
-            best_sec_tens <= 4'd0;
-            best_sec_ones <= 4'd0;
-            best_ms_hunds <= 4'd0;
-            best_ms_tens  <= 4'd0;
-            best_ms_ones  <= 4'd0;
-            best_valid    <= 1'b0;
+            best_sec_tens  <= 4'd0;
+            best_sec_ones  <= 4'd0;
+            best_ms_hunds  <= 4'd0;
+            best_ms_tens   <= 4'd0;
+            best_ms_ones   <= 4'd0;
+            best_valid     <= 1'b0;
         end else begin
-            // Two-flop synchronizer for asynchronous external buttons.
-            ui_meta <= ui_in;
-            ui_sync <= ui_meta;
-            ui_prev <= ui_sync;
+            // Synchronize the two used button inputs.
+            button_meta <= ui_in[1:0];
+            button_sync <= button_meta;
+            button_prev <= button_sync;
 
-            // 25,000 cycles are exactly one millisecond at 25 MHz.
-            if (state == ST_GO) begin
-                if (ms_div == 15'd24999) begin
-                    ms_div <= 15'd0;
+            // 25,000 pixel clocks = exactly 1 ms at 25 MHz.
+            if (state == ST_RUN) begin
+                if (ms_counter == 15'd24999) begin
+                    ms_counter <= 15'd0;
 
                     if (run_ms_ones != 4'd9) begin
                         run_ms_ones <= run_ms_ones + 4'd1;
@@ -157,52 +157,52 @@ module tt_um_vga_example (
                         end
                     end
                 end else begin
-                    ms_div <= ms_div + 15'd1;
+                    ms_counter <= ms_counter + 15'd1;
                 end
             end else begin
-                ms_div <= 15'd0;
+                ms_counter <= 15'd0;
             end
 
             case (state)
                 ST_IDLE: begin
                     if (start_press) begin
-                        // Lamp 1 turns on immediately.
-                        state        <= ST_LIGHT;
-                        lamp_count   <= 3'd1;
-                        light_div    <= 25'd0;
+                        // First lamp turns on at once.
+                        state         <= ST_LIGHT;
+                        lights_on     <= 3'd1;
+                        light_counter <= 25'd0;
 
-                        run_sec_tens <= 4'd0;
-                        run_sec_ones <= 4'd0;
-                        run_ms_hunds <= 4'd0;
-                        run_ms_tens  <= 4'd0;
-                        run_ms_ones  <= 4'd0;
+                        run_sec_tens  <= 4'd0;
+                        run_sec_ones  <= 4'd0;
+                        run_ms_hunds  <= 4'd0;
+                        run_ms_tens   <= 4'd0;
+                        run_ms_ones   <= 4'd0;
                     end
                 end
 
                 ST_LIGHT: begin
-                    // Reaction before lamp 5 is a false start.
+                    // Button press before lamp 5 is a false start.
                     if (react_press) begin
                         state <= ST_FALSE;
-                    end else if (light_div == (LIGHT_TICKS - 25'd1)) begin
-                        light_div <= 25'd0;
+                    end else if (light_counter == (LIGHT_TICKS - 25'd1)) begin
+                        light_counter <= 25'd0;
 
-                        // Lamp 5 turns on and timing begins on this edge.
-                        if (lamp_count == 3'd4) begin
-                            lamp_count <= 3'd5;
-                            state      <= ST_GO;
+                        // Lamp 5 turns red and starts the timer immediately.
+                        if (lights_on == 3'd4) begin
+                            lights_on <= 3'd5;
+                            state     <= ST_RUN;
                         end else begin
-                            lamp_count <= lamp_count + 3'd1;
+                            lights_on <= lights_on + 3'd1;
                         end
                     end else begin
-                        light_div <= light_div + 25'd1;
+                        light_counter <= light_counter + 25'd1;
                     end
                 end
 
-                ST_GO: begin
+                ST_RUN: begin
                     if (react_press) begin
                         state <= ST_DONE;
 
-                        if (!best_valid || run_is_better) begin
+                        if (!best_valid || current_is_best) begin
                             best_sec_tens <= run_sec_tens;
                             best_sec_ones <= run_sec_ones;
                             best_ms_hunds <= run_ms_hunds;
@@ -242,61 +242,280 @@ module tt_um_vga_example (
         end
     end
 
-    // 3x5 pixel font, encoded as one 15-bit bitmap per glyph.
-    // Supports digits and uppercase letters used by the interface.
-    function font_bit;
+    // 3x5 font rows for digits and required uppercase letters.
+    function [2:0] font_row;
         input [7:0] character;
         input [2:0] row;
-        input [1:0] col;
-        reg [14:0] bitmap;
-        reg [4:0] bit_index;
         begin
-            bitmap = 15'b000000000000000;
+            font_row = 3'b000;
 
             case (character)
-                8'h30: bitmap = 15'b111101101101111; // 0
-                8'h31: bitmap = 15'b010110010010111; // 1
-                8'h32: bitmap = 15'b110001010100111; // 2
-                8'h33: bitmap = 15'b110001010001110; // 3
-                8'h34: bitmap = 15'b101101111001001; // 4
-                8'h35: bitmap = 15'b111100110001110; // 5
-                8'h36: bitmap = 15'b011100111101111; // 6
-                8'h37: bitmap = 15'b111001010010010; // 7
-                8'h38: bitmap = 15'b111101111101111; // 8
-                8'h39: bitmap = 15'b111101111001110; // 9
+                8'h30: begin // 0
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b101;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h31: begin // 1
+                    case (row)
+                        3'd0: font_row = 3'b010;
+                        3'd1: font_row = 3'b110;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b010;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h32: begin // 2
+                    case (row)
+                        3'd0: font_row = 3'b110;
+                        3'd1: font_row = 3'b001;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b100;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h33: begin // 3
+                    case (row)
+                        3'd0: font_row = 3'b110;
+                        3'd1: font_row = 3'b001;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b001;
+                        3'd4: font_row = 3'b110;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h34: begin // 4
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b001;
+                        3'd4: font_row = 3'b001;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h35: begin // 5
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b001;
+                        3'd4: font_row = 3'b110;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h36: begin // 6
+                    case (row)
+                        3'd0: font_row = 3'b011;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h37: begin // 7
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b001;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b010;
+                        3'd4: font_row = 3'b010;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h38: begin // 8
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h39: begin // 9
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b001;
+                        3'd4: font_row = 3'b110;
+                        default: font_row = 3'b000;
+                    endcase
+                end
 
-                8'h41: bitmap = 15'b010101111101101; // A
-                8'h42: bitmap = 15'b110101110101110; // B
-                8'h43: bitmap = 15'b111100100100111; // C
-                8'h45: bitmap = 15'b111100110100111; // E
-                8'h46: bitmap = 15'b111100110100100; // F
-                8'h49: bitmap = 15'b111010010010111; // I
-                8'h4C: bitmap = 15'b100100100100111; // L
-                8'h4D: bitmap = 15'b101111111101101; // M
-                8'h4E: bitmap = 15'b101111111111101; // N
-                8'h4F: bitmap = 15'b111101101101111; // O
-                8'h50: bitmap = 15'b110101110100100; // P
-                8'h52: bitmap = 15'b110101110101101; // R
-                8'h53: bitmap = 15'b111100111001111; // S
-                8'h54: bitmap = 15'b111010010010010; // T
-                8'h55: bitmap = 15'b101101101101111; // U
-                8'h56: bitmap = 15'b101101101010010; // V
-                8'h58: bitmap = 15'b101101010101101; // X
-                8'h59: bitmap = 15'b101101010010010; // Y
-
-                default: bitmap = 15'b000000000000000;
+                8'h41: begin // A
+                    case (row)
+                        3'd0: font_row = 3'b010;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b101;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h42: begin // B
+                    case (row)
+                        3'd0: font_row = 3'b110;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b110;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h45: begin // E
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b100;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h46: begin // F
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b100;
+                        3'd4: font_row = 3'b100;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h4C: begin // L
+                    case (row)
+                        3'd0: font_row = 3'b100;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b100;
+                        3'd3: font_row = 3'b100;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h4D: begin // M
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b111;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b101;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h4E: begin // N
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b111;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b111;
+                        3'd4: font_row = 3'b101;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h4F: begin // O
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b101;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h50: begin // P
+                    case (row)
+                        3'd0: font_row = 3'b110;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b100;
+                        3'd4: font_row = 3'b100;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h52: begin // R
+                    case (row)
+                        3'd0: font_row = 3'b110;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b110;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b101;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h53: begin // S
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b100;
+                        3'd2: font_row = 3'b111;
+                        3'd3: font_row = 3'b001;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h54: begin // T
+                    case (row)
+                        3'd0: font_row = 3'b111;
+                        3'd1: font_row = 3'b010;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b010;
+                        3'd4: font_row = 3'b010;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h55: begin // U
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b101;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b111;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h56: begin // V
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b101;
+                        3'd3: font_row = 3'b010;
+                        3'd4: font_row = 3'b010;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h58: begin // X
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b101;
+                        3'd4: font_row = 3'b101;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                8'h59: begin // Y
+                    case (row)
+                        3'd0: font_row = 3'b101;
+                        3'd1: font_row = 3'b101;
+                        3'd2: font_row = 3'b010;
+                        3'd3: font_row = 3'b010;
+                        3'd4: font_row = 3'b010;
+                        default: font_row = 3'b000;
+                    endcase
+                end
+                default: font_row = 3'b000;
             endcase
-
-            bit_index = row + row + row + col;
-
-            if ((row < 3'd5) && (col < 2'd3))
-                font_bit = bitmap[14 - bit_index];
-            else
-                font_bit = 1'b0;
         end
     endfunction
 
-    // 3x5 glyph enlarged to 9x15 pixels.
     function label_pixel;
         input [9:0] px;
         input [9:0] py;
@@ -307,6 +526,7 @@ module tt_um_vga_example (
         reg [9:0] dy;
         reg [2:0] row;
         reg [1:0] col;
+        reg [2:0] bitmap_row;
         begin
             label_pixel = 1'b0;
 
@@ -334,12 +554,12 @@ module tt_um_vga_example (
                 else
                     row = 3'd4;
 
-                label_pixel = font_bit(character, row, col);
+                bitmap_row = font_row(character, row);
+                label_pixel = bitmap_row[2 - col];
             end
         end
     endfunction
 
-    // 3x5 digit enlarged to 15x25 pixels.
     function digit_pixel;
         input [9:0] px;
         input [9:0] py;
@@ -350,6 +570,7 @@ module tt_um_vga_example (
         reg [9:0] dy;
         reg [2:0] row;
         reg [1:0] col;
+        reg [2:0] bitmap_row;
         reg [7:0] character;
         begin
             digit_pixel = 1'b0;
@@ -379,56 +600,55 @@ module tt_um_vga_example (
                 else
                     row = 3'd4;
 
-                digit_pixel = font_bit(character, row, col);
+                bitmap_row = font_row(character, row);
+                digit_pixel = bitmap_row[2 - col];
             end
         end
     endfunction
 
-    function lamp_panel;
+    function lamp_box;
         input [9:0] px;
         input [9:0] py;
-        input [9:0] base_x;
+        input [9:0] x;
         begin
-            lamp_panel = (px >= base_x) &&
-                         (px < (base_x + 10'd90)) &&
-                         (py >= 10'd85) &&
-                         (py < 10'd155);
+            lamp_box = (px >= x) && (px < (x + 10'd84)) &&
+                       (py >= 10'd90) && (py < 10'd150);
         end
     endfunction
 
-    function lamp_core;
+    function lamp_inner;
         input [9:0] px;
         input [9:0] py;
-        input [9:0] base_x;
+        input [9:0] x;
         begin
-            lamp_core = (px >= (base_x + 10'd15)) &&
-                        (px < (base_x + 10'd75)) &&
-                        (py >= 10'd97) &&
-                        (py < 10'd143);
+            lamp_inner = (px >= (x + 10'd12)) &&
+                         (px < (x + 10'd72)) &&
+                         (py >= 10'd100) &&
+                         (py < 10'd140);
         end
     endfunction
 
     reg [1:0] red;
     reg [1:0] green;
     reg [1:0] blue;
-    reg       lamp_active;
-    reg       lamp_red;
-    reg       text_pixel;
-    reg       point_pixel;
+    reg       lamp_here;
+    reg       lamp_is_red;
+    reg       text_here;
+    reg       dot_here;
 
     always @* begin
-        // Black background: only black, red, and white are used.
-        red          = 2'b00;
-        green        = 2'b00;
-        blue         = 2'b00;
-        lamp_active  = 1'b0;
-        lamp_red     = 1'b0;
-        text_pixel   = 1'b0;
-        point_pixel  = 1'b0;
+        // Black background.
+        red         = 2'b00;
+        green       = 2'b00;
+        blue        = 2'b00;
+        lamp_here   = 1'b0;
+        lamp_is_red = 1'b0;
+        text_here   = 1'b0;
+        dot_here    = 1'b0;
 
-        // Header line: red while measuring, otherwise white.
-        if (pix_y < 10'd9) begin
-            if (state == ST_GO) begin
+        // Header stripe.
+        if (pix_y < 10'd8) begin
+            if (state == ST_RUN) begin
                 red   = 2'b11;
                 green = 2'b00;
                 blue  = 2'b00;
@@ -439,88 +659,79 @@ module tt_um_vga_example (
             end
         end
 
-        // Heading: F1 REFLEX TRAINER.
-        text_pixel =
-            label_pixel(pix_x, pix_y, 10'd235, 10'd28, 8'h46) | // F
-            label_pixel(pix_x, pix_y, 10'd245, 10'd28, 8'h31) | // 1
-            label_pixel(pix_x, pix_y, 10'd265, 10'd28, 8'h52) | // R
-            label_pixel(pix_x, pix_y, 10'd275, 10'd28, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd285, 10'd28, 8'h46) | // F
-            label_pixel(pix_x, pix_y, 10'd295, 10'd28, 8'h4C) | // L
-            label_pixel(pix_x, pix_y, 10'd305, 10'd28, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd315, 10'd28, 8'h58) | // X
-            label_pixel(pix_x, pix_y, 10'd335, 10'd28, 8'h54) | // T
-            label_pixel(pix_x, pix_y, 10'd345, 10'd28, 8'h52) | // R
-            label_pixel(pix_x, pix_y, 10'd355, 10'd28, 8'h41) | // A
-            label_pixel(pix_x, pix_y, 10'd365, 10'd28, 8'h49) | // I
-            label_pixel(pix_x, pix_y, 10'd375, 10'd28, 8'h4E) | // N
-            label_pixel(pix_x, pix_y, 10'd385, 10'd28, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd395, 10'd28, 8'h52);  // R
+        // Heading: F1 REFLEX.
+        text_here =
+            label_pixel(pix_x, pix_y, 10'd255, 10'd30, 8'h46) |
+            label_pixel(pix_x, pix_y, 10'd265, 10'd30, 8'h31) |
+            label_pixel(pix_x, pix_y, 10'd285, 10'd30, 8'h52) |
+            label_pixel(pix_x, pix_y, 10'd295, 10'd30, 8'h45) |
+            label_pixel(pix_x, pix_y, 10'd305, 10'd30, 8'h46) |
+            label_pixel(pix_x, pix_y, 10'd315, 10'd30, 8'h4C) |
+            label_pixel(pix_x, pix_y, 10'd325, 10'd30, 8'h45) |
+            label_pixel(pix_x, pix_y, 10'd335, 10'd30, 8'h58);
 
-        if (text_pixel) begin
+        if (text_here) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        // Five black lamp housings.
-        if (lamp_panel(pix_x, pix_y, 10'd85) ||
-            lamp_panel(pix_x, pix_y, 10'd195) ||
-            lamp_panel(pix_x, pix_y, 10'd305) ||
-            lamp_panel(pix_x, pix_y, 10'd415) ||
-            lamp_panel(pix_x, pix_y, 10'd525)) begin
-            red   = 2'b00;
-            green = 2'b00;
-            blue  = 2'b00;
+        // Five lamp housings.
+        if (lamp_box(pix_x, pix_y, 10'd100) ||
+            lamp_box(pix_x, pix_y, 10'd200) ||
+            lamp_box(pix_x, pix_y, 10'd300) ||
+            lamp_box(pix_x, pix_y, 10'd400) ||
+            lamp_box(pix_x, pix_y, 10'd500)) begin
+            red   = 2'b11;
+            green = 2'b11;
+            blue  = 2'b11;
         end
 
-        // White top and bottom borders for lamps.
-        if (((pix_y >= 10'd85) && (pix_y < 10'd89)) ||
-            ((pix_y >= 10'd151) && (pix_y < 10'd155))) begin
-            if (((pix_x >= 10'd85) && (pix_x < 10'd175)) ||
-                ((pix_x >= 10'd195) && (pix_x < 10'd285)) ||
-                ((pix_x >= 10'd305) && (pix_x < 10'd395)) ||
-                ((pix_x >= 10'd415) && (pix_x < 10'd505)) ||
-                ((pix_x >= 10'd525) && (pix_x < 10'd615))) begin
-                red   = 2'b11;
-                green = 2'b11;
-                blue  = 2'b11;
+        if ((pix_y >= 10'd94) && (pix_y < 10'd146)) begin
+            if (lamp_box(pix_x, pix_y, 10'd100) ||
+                lamp_box(pix_x, pix_y, 10'd200) ||
+                lamp_box(pix_x, pix_y, 10'd300) ||
+                lamp_box(pix_x, pix_y, 10'd400) ||
+                lamp_box(pix_x, pix_y, 10'd500)) begin
+                red   = 2'b00;
+                green = 2'b00;
+                blue  = 2'b00;
             end
         end
 
-        // Lamp count rises from one to five. All five remain red while timing.
-        if (lamp_core(pix_x, pix_y, 10'd85)) begin
-            lamp_active = 1'b1;
-            lamp_red = ((state == ST_LIGHT) || (state == ST_GO)) &&
-                       (lamp_count > 3'd0);
+        // Five sequential lights.
+        if (lamp_inner(pix_x, pix_y, 10'd100)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd0);
         end
 
-        if (lamp_core(pix_x, pix_y, 10'd195)) begin
-            lamp_active = 1'b1;
-            lamp_red = ((state == ST_LIGHT) || (state == ST_GO)) &&
-                       (lamp_count > 3'd1);
+        if (lamp_inner(pix_x, pix_y, 10'd200)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd1);
         end
 
-        if (lamp_core(pix_x, pix_y, 10'd305)) begin
-            lamp_active = 1'b1;
-            lamp_red = ((state == ST_LIGHT) || (state == ST_GO)) &&
-                       (lamp_count > 3'd2);
+        if (lamp_inner(pix_x, pix_y, 10'd300)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd2);
         end
 
-        if (lamp_core(pix_x, pix_y, 10'd415)) begin
-            lamp_active = 1'b1;
-            lamp_red = ((state == ST_LIGHT) || (state == ST_GO)) &&
-                       (lamp_count > 3'd3);
+        if (lamp_inner(pix_x, pix_y, 10'd400)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd3);
         end
 
-        if (lamp_core(pix_x, pix_y, 10'd525)) begin
-            lamp_active = 1'b1;
-            lamp_red = ((state == ST_LIGHT) || (state == ST_GO)) &&
-                       (lamp_count > 3'd4);
+        if (lamp_inner(pix_x, pix_y, 10'd500)) begin
+            lamp_here   = 1'b1;
+            lamp_is_red = ((state == ST_LIGHT) || (state == ST_RUN)) &&
+                          (lights_on > 3'd4);
         end
 
-        if (lamp_active) begin
-            if (lamp_red) begin
+        if (lamp_here) begin
+            if (lamp_is_red) begin
                 red   = 2'b11;
                 green = 2'b00;
                 blue  = 2'b00;
@@ -531,147 +742,145 @@ module tt_um_vga_example (
             end
         end
 
-        // Main timer card.
-        if ((pix_x >= 10'd175) && (pix_x < 10'd465) &&
-            (pix_y >= 10'd185) && (pix_y < 10'd265)) begin
+        // Current-time card.
+        if ((pix_x >= 10'd190) && (pix_x < 10'd450) &&
+            (pix_y >= 10'd185) && (pix_y < 10'd255)) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        if ((pix_x >= 10'd180) && (pix_x < 10'd460) &&
-            (pix_y >= 10'd190) && (pix_y < 10'd260)) begin
+        if ((pix_x >= 10'd194) && (pix_x < 10'd446) &&
+            (pix_y >= 10'd189) && (pix_y < 10'd251)) begin
             red   = 2'b00;
             green = 2'b00;
             blue  = 2'b00;
         end
 
-        // Current time: SS.MMM.
-        text_pixel =
-            digit_pixel(pix_x, pix_y, 10'd240, 10'd210, run_sec_tens) |
-            digit_pixel(pix_x, pix_y, 10'd260, 10'd210, run_sec_ones) |
-            digit_pixel(pix_x, pix_y, 10'd295, 10'd210, run_ms_hunds) |
-            digit_pixel(pix_x, pix_y, 10'd315, 10'd210, run_ms_tens) |
-            digit_pixel(pix_x, pix_y, 10'd335, 10'd210, run_ms_ones);
+        // Current SS.MMM.
+        text_here =
+            digit_pixel(pix_x, pix_y, 10'd245, 10'd205, run_sec_tens) |
+            digit_pixel(pix_x, pix_y, 10'd265, 10'd205, run_sec_ones) |
+            digit_pixel(pix_x, pix_y, 10'd300, 10'd205, run_ms_hunds) |
+            digit_pixel(pix_x, pix_y, 10'd320, 10'd205, run_ms_tens) |
+            digit_pixel(pix_x, pix_y, 10'd340, 10'd205, run_ms_ones);
 
-        point_pixel = (pix_x >= 10'd282) && (pix_x < 10'd288) &&
-                      (pix_y >= 10'd229) && (pix_y < 10'd235);
+        dot_here = (pix_x >= 10'd287) && (pix_x < 10'd293) &&
+                   (pix_y >= 10'd224) && (pix_y < 10'd230);
 
-        if (text_pixel || point_pixel) begin
+        if (text_here || dot_here) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        // Best-score card.
-        if ((pix_x >= 10'd90) && (pix_x < 10'd550) &&
-            (pix_y >= 10'd305) && (pix_y < 10'd355)) begin
+        // Your best panel.
+        if ((pix_x >= 10'd110) && (pix_x < 10'd530) &&
+            (pix_y >= 10'd300) && (pix_y < 10'd345)) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        if ((pix_x >= 10'd94) && (pix_x < 10'd546) &&
-            (pix_y >= 10'd309) && (pix_y < 10'd351)) begin
+        if ((pix_x >= 10'd114) && (pix_x < 10'd526) &&
+            (pix_y >= 10'd304) && (pix_y < 10'd341)) begin
             red   = 2'b00;
             green = 2'b00;
             blue  = 2'b00;
         end
 
-        // Label: YOUR BEST.
-        text_pixel =
-            label_pixel(pix_x, pix_y, 10'd112, 10'd322, 8'h59) | // Y
-            label_pixel(pix_x, pix_y, 10'd122, 10'd322, 8'h4F) | // O
-            label_pixel(pix_x, pix_y, 10'd132, 10'd322, 8'h55) | // U
-            label_pixel(pix_x, pix_y, 10'd152, 10'd322, 8'h42) | // B
-            label_pixel(pix_x, pix_y, 10'd162, 10'd322, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd172, 10'd322, 8'h53) | // S
-            label_pixel(pix_x, pix_y, 10'd182, 10'd322, 8'h54);  // T
+        text_here =
+            label_pixel(pix_x, pix_y, 10'd130, 10'd316, 8'h59) |
+            label_pixel(pix_x, pix_y, 10'd140, 10'd316, 8'h4F) |
+            label_pixel(pix_x, pix_y, 10'd150, 10'd316, 8'h55) |
+            label_pixel(pix_x, pix_y, 10'd170, 10'd316, 8'h42) |
+            label_pixel(pix_x, pix_y, 10'd180, 10'd316, 8'h45) |
+            label_pixel(pix_x, pix_y, 10'd190, 10'd316, 8'h53) |
+            label_pixel(pix_x, pix_y, 10'd200, 10'd316, 8'h54);
 
-        if (text_pixel) begin
+        if (text_here) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
         if (best_valid) begin
-            text_pixel =
-                digit_pixel(pix_x, pix_y, 10'd390, 10'd314, best_sec_tens) |
-                digit_pixel(pix_x, pix_y, 10'd408, 10'd314, best_sec_ones) |
-                digit_pixel(pix_x, pix_y, 10'd438, 10'd314, best_ms_hunds) |
-                digit_pixel(pix_x, pix_y, 10'd456, 10'd314, best_ms_tens) |
-                digit_pixel(pix_x, pix_y, 10'd474, 10'd314, best_ms_ones);
+            text_here =
+                digit_pixel(pix_x, pix_y, 10'd380, 10'd310, best_sec_tens) |
+                digit_pixel(pix_x, pix_y, 10'd398, 10'd310, best_sec_ones) |
+                digit_pixel(pix_x, pix_y, 10'd428, 10'd310, best_ms_hunds) |
+                digit_pixel(pix_x, pix_y, 10'd446, 10'd310, best_ms_tens) |
+                digit_pixel(pix_x, pix_y, 10'd464, 10'd310, best_ms_ones);
         end else begin
-            text_pixel = 1'b0;
+            text_here = 1'b0;
         end
 
-        point_pixel = (pix_x >= 10'd429) && (pix_x < 10'd434) &&
-                      (pix_y >= 10'd329) && (pix_y < 10'd334);
+        dot_here = (pix_x >= 10'd419) && (pix_x < 10'd424) &&
+                   (pix_y >= 10'd325) && (pix_y < 10'd330);
 
-        if (text_pixel || (point_pixel && best_valid)) begin
+        if (text_here || (dot_here && best_valid)) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        // Max target card.
-        if ((pix_x >= 10'd90) && (pix_x < 10'd550) &&
-            (pix_y >= 10'd375) && (pix_y < 10'd425)) begin
+        // Max target panel.
+        if ((pix_x >= 10'd110) && (pix_x < 10'd530) &&
+            (pix_y >= 10'd370) && (pix_y < 10'd415)) begin
             red   = 2'b11;
             green = 2'b00;
             blue  = 2'b00;
         end
 
-        if ((pix_x >= 10'd94) && (pix_x < 10'd546) &&
-            (pix_y >= 10'd379) && (pix_y < 10'd421)) begin
+        if ((pix_x >= 10'd114) && (pix_x < 10'd526) &&
+            (pix_y >= 10'd374) && (pix_y < 10'd411)) begin
             red   = 2'b00;
             green = 2'b00;
             blue  = 2'b00;
         end
 
-        // Label: MAX VERSTAPPEN.
-        text_pixel =
-            label_pixel(pix_x, pix_y, 10'd112, 10'd392, 8'h4D) | // M
-            label_pixel(pix_x, pix_y, 10'd122, 10'd392, 8'h41) | // A
-            label_pixel(pix_x, pix_y, 10'd132, 10'd392, 8'h58) | // X
-            label_pixel(pix_x, pix_y, 10'd152, 10'd392, 8'h56) | // V
-            label_pixel(pix_x, pix_y, 10'd162, 10'd392, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd172, 10'd392, 8'h52) | // R
-            label_pixel(pix_x, pix_y, 10'd182, 10'd392, 8'h53) | // S
-            label_pixel(pix_x, pix_y, 10'd192, 10'd392, 8'h54) | // T
-            label_pixel(pix_x, pix_y, 10'd202, 10'd392, 8'h41) | // A
-            label_pixel(pix_x, pix_y, 10'd212, 10'd392, 8'h50) | // P
-            label_pixel(pix_x, pix_y, 10'd222, 10'd392, 8'h50) | // P
-            label_pixel(pix_x, pix_y, 10'd232, 10'd392, 8'h45) | // E
-            label_pixel(pix_x, pix_y, 10'd242, 10'd392, 8'h4E);  // N
+        text_here =
+            label_pixel(pix_x, pix_y, 10'd130, 10'd386, 8'h4D) |
+            label_pixel(pix_x, pix_y, 10'd140, 10'd386, 8'h41) |
+            label_pixel(pix_x, pix_y, 10'd150, 10'd386, 8'h58) |
+            label_pixel(pix_x, pix_y, 10'd170, 10'd386, 8'h56) |
+            label_pixel(pix_x, pix_y, 10'd180, 10'd386, 8'h45) |
+            label_pixel(pix_x, pix_y, 10'd190, 10'd386, 8'h52) |
+            label_pixel(pix_x, pix_y, 10'd200, 10'd386, 8'h53) |
+            label_pixel(pix_x, pix_y, 10'd210, 10'd386, 8'h54) |
+            label_pixel(pix_x, pix_y, 10'd220, 10'd386, 8'h41) |
+            label_pixel(pix_x, pix_y, 10'd230, 10'd386, 8'h50) |
+            label_pixel(pix_x, pix_y, 10'd240, 10'd386, 8'h50) |
+            label_pixel(pix_x, pix_y, 10'd250, 10'd386, 8'h45) |
+            label_pixel(pix_x, pix_y, 10'd260, 10'd386, 8'h4E);
 
-        if (text_pixel) begin
+        if (text_here) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        // Fixed requested target: 00.227.
-        text_pixel =
-            digit_pixel(pix_x, pix_y, 10'd390, 10'd384, MAX_SEC_TENS) |
-            digit_pixel(pix_x, pix_y, 10'd408, 10'd384, MAX_SEC_ONES) |
-            digit_pixel(pix_x, pix_y, 10'd438, 10'd384, MAX_MS_HUNDS) |
-            digit_pixel(pix_x, pix_y, 10'd456, 10'd384, MAX_MS_TENS) |
-            digit_pixel(pix_x, pix_y, 10'd474, 10'd384, MAX_MS_ONES);
+        // Fixed target: 00.227.
+        text_here =
+            digit_pixel(pix_x, pix_y, 10'd380, 10'd380, MAX_SEC_TENS) |
+            digit_pixel(pix_x, pix_y, 10'd398, 10'd380, MAX_SEC_ONES) |
+            digit_pixel(pix_x, pix_y, 10'd428, 10'd380, MAX_MS_HUNDS) |
+            digit_pixel(pix_x, pix_y, 10'd446, 10'd380, MAX_MS_TENS) |
+            digit_pixel(pix_x, pix_y, 10'd464, 10'd380, MAX_MS_ONES);
 
-        point_pixel = (pix_x >= 10'd429) && (pix_x < 10'd434) &&
-                      (pix_y >= 10'd399) && (pix_y < 10'd404);
+        dot_here = (pix_x >= 10'd419) && (pix_x < 10'd424) &&
+                   (pix_y >= 10'd395) && (pix_y < 10'd400);
 
-        if (text_pixel || point_pixel) begin
+        if (text_here || dot_here) begin
             red   = 2'b11;
             green = 2'b11;
             blue  = 2'b11;
         end
 
-        // State markers: false start in red, timeout in white.
+        // Error strips.
         if (state == ST_FALSE) begin
-            if ((pix_x >= 10'd245) && (pix_x < 10'd395) &&
-                (pix_y >= 10'd170) && (pix_y < 10'd176)) begin
+            if ((pix_x >= 10'd250) && (pix_x < 10'd390) &&
+                (pix_y >= 10'd165) && (pix_y < 10'd171)) begin
                 red   = 2'b11;
                 green = 2'b00;
                 blue  = 2'b00;
@@ -680,14 +889,14 @@ module tt_um_vga_example (
 
         if (state == ST_SLOW) begin
             if ((pix_x >= 10'd270) && (pix_x < 10'd370) &&
-                (pix_y >= 10'd170) && (pix_y < 10'd176)) begin
+                (pix_y >= 10'd165) && (pix_y < 10'd171)) begin
                 red   = 2'b11;
                 green = 2'b11;
                 blue  = 2'b11;
             end
         end
 
-        // RGB is black outside the active VGA image.
+        // VGA blanking.
         if (!display_on) begin
             red   = 2'b00;
             green = 2'b00;
@@ -695,7 +904,7 @@ module tt_um_vga_example (
         end
     end
 
-    // TinyVGA PMOD output order.
+    // TinyVGA PMOD pin order.
     assign uo_out  = {hsync, blue[0], green[0], red[0],
                       vsync, blue[1], green[1], red[1]};
     assign uio_out = 8'h00;
@@ -741,10 +950,10 @@ module hvsync_generator (
     assign hpos = hcount;
     assign vpos = vcount;
 
-    // 640 active + 16 front porch + 96 active-low sync + 48 back porch.
+    // 640 active + 16 front porch + 96 sync + 48 back porch.
     assign hsync = !((hcount >= 10'd656) && (hcount < 10'd752));
 
-    // 480 active + 10 front porch + 2 active-low sync + 33 back porch.
+    // 480 active + 10 front porch + 2 sync + 33 back porch.
     assign vsync = !((vcount >= 10'd490) && (vcount < 10'd492));
 
     assign display_on = (hcount < 10'd640) && (vcount < 10'd480);
