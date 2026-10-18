@@ -1,20 +1,8 @@
-<!---
-
-This file is used to generate your project datasheet. Please fill in the information below and delete any unused
-sections.
-
-You can also include images in this folder and reference them in the markdown. Each image must be less than
-512 kb in size, and the combined size of all images must be less than 1 MB.
--->
+# F1 Reflex Precision Trainer
 
 ## How it works
-
-Explain how your project works
+This chip implements an F1 starting lights reaction time tester on a 640x480 60Hz VGA display using synchronous Verilog hardware logic. It features a sequential 5-column starting light gantry, an LFSR randomizer, and a millisecond-precision stopwatch counter.
 
 ## How to test
-
-Explain how to use your project
-
-## External hardware
-
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+1. Connect a TinyVGA Pmod to the output port.
+2. Press `ui_in[0]` (Start) to
